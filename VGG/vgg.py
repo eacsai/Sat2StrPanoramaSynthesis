@@ -9,7 +9,6 @@
 
 from __future__ import division
 import numpy as np
-import tensorflow as tf
 
 
 def build_net(ntype, nin, nwb=None, name=None):

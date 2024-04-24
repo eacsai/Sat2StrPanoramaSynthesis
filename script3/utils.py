@@ -2,11 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
-import torchvision.transforms as transforms
-import functools
 
-
-to_pil = transforms.ToPILImage()
 
 def init_weights(net, init_type='normal', init_gain=0.02):
     """Initialize network weights.
@@ -21,12 +17,7 @@ def init_weights(net, init_type='normal', init_gain=0.02):
     """
     def init_func(m):  # define the initialization function
         classname = m.__class__.__name__
-        if classname.find('ConvTranspose2d') != -1 and m.bias is not None:
-            init.normal_(m.weight.data, 0.0, 0)
-            init.constant_(m.bias.data, 0.0)
-            m.bias.data[-1] = 1.0
-            
-        elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
+        if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
             if init_type == 'normal':
                 init.normal_(m.weight.data, 0.0, init_gain)
             elif init_type == 'xavier':
@@ -49,7 +40,7 @@ def init_weights(net, init_type='normal', init_gain=0.02):
     net.apply(init_func)  # apply the initialization function <init_func>
 
 
-def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[0]):
+def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     """Initialize a network: 1. register CPU/GPU device (with multi-GPU support); 2. initialize the network weights
     Parameters:
         net (network)      -- the network to be initialized
@@ -59,21 +50,18 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[0]):
 
     Return an initialized network.
     """
-    # if len(gpu_ids) > 0:
-    #     assert (torch.cuda.is_available())
-    #     net.to(gpu_ids[0])
-    #     net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
-    net.to('cuda')
-    print('initialize network %s' % net.__class__.__name__)
+    if len(gpu_ids) > 0:
+        assert (torch.cuda.is_available())
+        net.to(gpu_ids[0])
+        net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
     init_weights(net, init_type, init_gain=init_gain)
     return net
 
 
 class Encoder_Decoder(nn.Module):
-    def __init__(self, input_channels, generator_outputs_channels = 64, ngf=4, skip=True):
+    def __init__(self, input_channels, generator_outputs_channels, ngf=4, skip=True):
         super(Encoder_Decoder, self).__init__()
         self.skip = skip
-        self.generator_outputs_channels = generator_outputs_channels
         # Encoder layers
         # Using list comprehension to create subsequent encoder layers
         layer_specs = [
@@ -92,20 +80,16 @@ class Encoder_Decoder(nn.Module):
             # ngf * 8, # encoder_8: [batch, 4, 4, ngf * 8] => [batch, 2, 2, ngf * 8]
         ]
 
-        layers = [nn.ModuleList([nn.Conv2d(input_channels, ngf,
-                                           kernel_size=4, stride=2, padding=1)])]
+        layers = [nn.Conv2d(input_channels, ngf,
+                            kernel_size=4, stride=2, padding=1)]
 
         in_channels = ngf
         for out_channels in layer_specs:
-            encode_layers = []
-            encode_layers.append(nn.LeakyReLU(0.2, inplace=True))
-            encode_layers.append(nn.Conv2d(in_channels, out_channels,
-                                           kernel_size=4, stride=2, padding=1))
-            encode_layers.append(nn.BatchNorm2d(out_channels))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            layers.append(nn.Conv2d(in_channels, out_channels,
+                          kernel_size=4, stride=2, padding=1))
+            layers.append(nn.BatchNorm2d(out_channels))
             in_channels = out_channels
-            layers.append(nn.ModuleList([
-                *encode_layers
-            ]))
 
         self.encoder_layers = nn.ModuleList([
             *layers
@@ -129,119 +113,81 @@ class Encoder_Decoder(nn.Module):
             (ngf, 0.0),
         ]
 
-        for index, (out_channels, dropout) in enumerate(layer_specs):
-            decoder_layers = []
-            decoder_layers.append(nn.ReLU(inplace=True))
-            decoder_layers.append(nn.ConvTranspose2d(
-                in_channels, out_channels, kernel_size=4, stride=2, padding=1, output_padding=0, bias=False))
-            decoder_layers.append(nn.BatchNorm2d(out_channels))
+        for decoder_layer, (out_channels, dropout) in enumerate(layer_specs):
+            layers.append(nn.ReLU(inplace=True))
+            layers.append(nn.ConvTranspose2d(
+                in_channels, out_channels, kernel_size=4, stride=2, padding=1))
+            layers.append(nn.BatchNorm2d(out_channels))
             if dropout > 0.0:
-                decoder_layers.append(nn.Dropout(dropout))
-            layers.append(nn.ModuleList([
-                *decoder_layers
-            ]))
-            in_channels = out_channels * 2
+                layers.append(nn.Dropout(dropout))
+            in_channels = out_channels
 
-        self.decoder_layers = nn.ModuleList([
-            *layers
-        ])
-
-        # self.relu = nn.ReLU(inplace=True)
-        # self.conv_transpose = nn.ConvTranspose2d(
-        #     int(in_channels / 2), generator_outputs_channels, kernel_size=4, stride=2, padding=1, output_padding=0)
-        # self.softmax = nn.Softmax(dim=1)
-        
-        # # 初始化权重为0
-        # nn.init.constant_(self.conv_transpose.weight.data, 0)
-        # init.constant_(self.conv_transpose.bias.data, 0.0)
-        # self.conv_transpose.bias.data[-1] = 1.0
-        
-        layers = []
-        
         layers.append(nn.ReLU(inplace=True))
         layers.append(nn.ConvTranspose2d(
-            int(in_channels / 2), generator_outputs_channels, kernel_size=4, stride=2, padding=1, output_padding=0, bias=True))
+            in_channels, generator_outputs_channels, kernel_size=4, stride=2, padding='same'))
         layers.append(nn.Softmax(dim=1))
-        self.upsample_layers = nn.ModuleList([
+
+        self.decoder_layers = nn.ModuleList([
             *layers
         ])
 
     def forward(self, x):
         # Encoder
         layers = []
-        for encoder_layers in self.encoder_layers:
-            for layer in encoder_layers:
-                x = layer(x)
+        for layer in self.encoder_layers:
+            x = layer(x)
             layers.append(x)
 
-        layers.append(x.view(-1, x.shape[1], 1, 4))
+        layers.append(x.view(-1, 1, 4, x.get_shape().as_list()[-1]))
         num_encoder_layers = len(layers)
 
         # Decoder
-        for i, decoder_layers in enumerate(self.decoder_layers):
+        for i, layer in enumerate(self.decoder_layers):
             skip_layer = num_encoder_layers - i - 2
             if self.skip and i > 0:
-                x = torch.cat([x, layers[skip_layer]], dim=1)
-            for decode in decoder_layers:
-                x = decode(x)
-            layers.append(x)
-        
-        # unsample
-        for upsample_layer in self.upsample_layers:
-            x = upsample_layer(x)
+                x = torch.cat([x, layers[skip_layer]], dim=3)
+            x = layer(x)
+
         return x
 
 
 class Discriminator(nn.Module):
-    """Defines a PatchGAN discriminator"""
-
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
-        """Construct a PatchGAN discriminator
-
-        Parameters:
-            input_nc (int)  -- the number of channels in input images
-            ndf (int)       -- the number of filters in the last conv layer
-            n_layers (int)  -- the number of conv layers in the discriminator
-            norm_layer      -- normalization layer
-        """
+    def __init__(self, in_channels, out_channels, ndf, stride=2):
         super(Discriminator, self).__init__()
-        if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
-            use_bias = norm_layer.func == nn.InstanceNorm2d
-        else:
-            use_bias = norm_layer == nn.InstanceNorm2d
-        kw = 4
-        padw = 1
-        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
-        nf_mult = 1
-        nf_mult_prev = 1
-        for n in range(1, n_layers):  # gradually increase the number of filters
-            nf_mult_prev = nf_mult
-            nf_mult = min(2 ** n, 8)
-            sequence += [
-                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
-                norm_layer(ndf * nf_mult),
-                nn.LeakyReLU(0.2, True)
-            ]
+        self.n_layers = 3
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=4,
+                               stride=stride, padding=0, bias=True)  # 注意这里的padding设置为0
+        self.convs = []
+        in_channels = 0
+        for i in range(self.n_layers):
+            in_channels = out_channels
+            out_channels = ndf * min(2**(i+1), 8)
+            stride = 1 if i == self.n_layers - 1 else 2
+            self.convs.append([nn.Conv2d(in_channels, out_channels, kernel_size=4,
+                              stride=stride, padding=0, bias=True), nn.BatchNorm2d(out_channels)])
+        in_channels = out_channels
+        self.last_conv = nn.Conv2d(
+            in_channels, 1, kernel_size=4, stride=1, padding=0, bias=True)
 
-        nf_mult_prev = nf_mult
-        nf_mult = min(2 ** n_layers, 8)
-        sequence += [
-            nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=1, padding=padw, bias=use_bias),
-            norm_layer(ndf * nf_mult),
-            nn.LeakyReLU(0.2, True)
-        ]
-
-        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
-        self.model = nn.Sequential(*sequence)
-
-    def forward(self, input):
-        """Standard forward."""
-        return self.model(input)
+    def forward(self, x):
+        x_padded = F.pad(x, (1, 1, 1, 1), mode='constant', value=0)
+        x = self.conv1(x_padded)
+        x = F.leaky_relu(x, 0.2)
+        for i in range(self.n_layers):
+            conv = self.convs[i][0]
+            batchnorm = self.convs[i][1]
+            x_padded = F.pad(x, (1, 1, 1, 1), mode='constant', value=0)
+            x = conv(x_padded)
+            x = batchnorm(x)
+            x = F.leaky_relu(x, 0.2)
+        x_padded = F.pad(x, (1, 1, 1, 1), mode='constant', value=0)
+        x = self.last_conv(x_padded)
+        return torch.sigmoid(x)
 
 
-class Generator(nn.Module):
+class UNet(nn.Module):
     def __init__(self, input_channels, generator_outputs_channels, ngf=4, skip=True):
-        super(Generator, self).__init__()
+        super(UNet, self).__init__()
         self.skip = skip
         # Encoder layers
         # Using list comprehension to create subsequent encoder layers
@@ -302,7 +248,7 @@ class Generator(nn.Module):
             decoder_layers = []
             decoder_layers.append(nn.ReLU(inplace=True))
             decoder_layers.append(nn.ConvTranspose2d(
-                in_channels, out_channels, kernel_size=4, stride=2, padding=1, output_padding=0, bias=False))
+                in_channels, out_channels, kernel_size=4, stride=2, padding=1, output_padding=0,))
             decoder_layers.append(nn.BatchNorm2d(out_channels))
             if dropout > 0.0:
                 decoder_layers.append(nn.Dropout(dropout))
@@ -318,7 +264,7 @@ class Generator(nn.Module):
         layers = []
         layers.append(nn.ReLU(inplace=True))
         layers.append(nn.ConvTranspose2d(
-            int(in_channels / 2), generator_outputs_channels, kernel_size=4, stride=2, padding=1, output_padding=0, bias=False))
+            int(in_channels / 2), generator_outputs_channels, kernel_size=4, stride=2, padding=1, output_padding=0))
         layers.append(nn.Tanh())
         self.upsamle_layers = nn.ModuleList([
             *layers
@@ -327,7 +273,7 @@ class Generator(nn.Module):
     def forward(self, x):
         # Encoder
         layers = []
-        
+        x = x.permute(0, 3, 1, 2)
         for encoder_layers in self.encoder_layers:
             for layer in encoder_layers:
                 x = layer(x)
@@ -349,70 +295,24 @@ class Generator(nn.Module):
         # unsample
         for i, upsample in enumerate(self.upsamle_layers):
             x = upsample(x)
+
         return x
 
-class GANLoss(nn.Module):
-    """Define different GAN objectives.
 
-    The GANLoss class abstracts away the need to create the target label tensor
-    that has the same size as the input.
-    """
-
-    def __init__(self, target_real_label=1.0, target_fake_label=0.0):
-        """ Initialize the GANLoss class.
-
-        Parameters:
-            target_real_label (bool) - - label for a real image
-            target_fake_label (bool) - - label of a fake image
-
-        Note: Do not use sigmoid as the last layer of Discriminator.
-        LSGAN needs no sigmoid. vanilla GANs will handle it with BCEWithLogitsLoss.
-        """
-        super(GANLoss, self).__init__()
-        self.register_buffer('real_label', torch.tensor(target_real_label))
-        self.register_buffer('fake_label', torch.tensor(target_fake_label))
-        self.loss = nn.MSELoss()
-
-    def get_target_tensor(self, prediction, target_is_real):
-        """Create label tensors with the same size as the input.
-
-        Parameters:
-            prediction (tensor) - - tpyically the prediction from a discriminator
-            target_is_real (bool) - - if the ground truth label is for real images or fake images
-
-        Returns:
-            A label tensor filled with ground truth label, and with the size of the input
-        """
-
-        if target_is_real:
-            target_tensor = self.real_label
-        else:
-            target_tensor = self.fake_label
-        return target_tensor.expand_as(prediction)
-
-    def __call__(self, prediction, target_is_real):
-        """Calculate loss given Discriminator's output and grount truth labels.
-
-        Parameters:
-            prediction (tensor) - - tpyically the prediction output from a discriminator
-            target_is_real (bool) - - if the ground truth label is for real images or fake images
-
-        Returns:
-            the calculated loss.
-        """
-        target_tensor = self.get_target_tensor(prediction, target_is_real)
-        loss = self.loss(prediction, target_tensor)
-        return loss
-
-def generator(in_channels, generator_outputs_channels, ngf=4, init_type='normal', init_gain=0.02, gpu_ids=[0]):
-    net = Generator(input_channels=in_channels,
-               generator_outputs_channels=generator_outputs_channels, ngf=ngf).to('cuda')
+def unet(generator_inputs, generator_outputs_channels, ngf=4, init_type='normal', init_gain=0.02, gpu_ids=[0]):
+    in_channels = generator_inputs.shape[-1]
+    net = UNet(input_channels=in_channels,
+               generator_outputs_channels=generator_outputs_channels, ngf=ngf)
     return init_net(net, init_type, init_gain, gpu_ids)
 
-def encoder_decoder(in_channels, generator_outputs_channels, ngf=4, init_type='normal', init_gain=0.02, gpu_ids=[0]):
-    net = Encoder_Decoder(in_channels, generator_outputs_channels, ngf).to('cuda')
+
+def encoder_decoder(generator_inputs, generator_outputs_channels, ngf=4, init_type='normal', init_gain=0.02, gpu_ids=[0]):
+    in_channels = generator_inputs.shape[-1]
+    net = Encoder_Decoder(in_channels, generator_outputs_channels, ngf)
     return init_net(net, init_type, init_gain, gpu_ids)
 
-def discriminator(in_channels, init_type='normal', init_gain=0.02, gpu_ids=[0]):
-    net = Discriminator(in_channels).to('cuda')
+
+def discriminator(generator_inputs, generator_outputs_channels, ngf=4, init_type='normal', init_gain=0.02, gpu_ids=[0]):
+    in_channels = generator_inputs.shape[-1]
+    net = Encoder_Decoder(in_channels, generator_outputs_channels, ngf)
     return init_net(net, init_type, init_gain, gpu_ids)

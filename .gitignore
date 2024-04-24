@@ -1,0 +1,11 @@
+.vscode
+checkpoints
+__pycache__
+# 忽略图片文件
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.ico

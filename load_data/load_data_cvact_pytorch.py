@@ -1,30 +1,20 @@
 import collections
 import os.path
-
 import torch
+
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-import numpy as np
 import os
-import random
 import math
-
-# 设置随机种子
-seed = 2020
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
-torch.cuda.manual_seed(seed)
+import scipy.io as sio
 
 Examples = collections.namedtuple("Examples", "paths, dataloader, count, steps_per_epoch")
 
 class ImageDataset(Dataset):
-    def __init__(self, aer_list, pano_list, tanpolar_list, polar_list):
+    def __init__(self, aer_list, pano_list):
         self.aer_list = aer_list
         self.pano_list = pano_list
-        self.tanpolar_list = tanpolar_list
-        self.polar_list = polar_list
         self.preprocess = transforms.Compose([
             # 此步骤后，像素值会在[0, 1]范围内
             transforms.ToTensor(),
@@ -40,51 +30,71 @@ class ImageDataset(Dataset):
     def __getitem__(self, idx):
         aer_image = Image.open(self.aer_list[idx]).convert('RGB')
         pano_image = Image.open(self.pano_list[idx]).convert('RGB')
-        tanpolar_image = Image.open(self.tanpolar_list[idx]).convert('RGBA')
-        polar_image = Image.open(self.polar_list[idx]).convert('RGBA')
 
         # 应用预处理
         aer_image = self.preprocess(aer_image)
         pano_image = self.preprocess(pano_image)
-        tanpolar_image = self.preprocess(tanpolar_image)
-        polar_image = self.preprocess(polar_image)
+        pano_path = self.pano_list[idx]
 
-        return aer_image, pano_image, tanpolar_image, polar_image
+        return pano_path, aer_image, pano_image
 
 
 # pytorch version of CVUSA loader
 def load_examples(mode='train', batch_size=2):
     
     img_root = '/public/home/v-wangqw/program/CVACT/'
-    if mode=='train':
-        file_list = os.path.join(img_root, 'splits/train-19zl.csv')
-    elif mode=='test':
-        file_list = os.path.join(img_root, 'splits/val-19zl.csv')
+    allDataList = os.path.join(img_root, 'ACT_data.mat')
+
+    exist_aer_list = os.listdir(img_root + 'satview_polish')
+    exist_grd_list = os.listdir(img_root + 'streetview')
+    exist_polar_list = os.listdir(img_root + 'streetview')
+    
+    __cur_allid = 0  # for training
+    
+    # load the mat
+    anuData = sio.loadmat(allDataList)
     
     data_list = []
-    with open(file_list, 'r') as f:
-        for line in f:
-            data = line.split(',')
-            # data_list.append([img_root + data[0], img_root + data[1], img_root + data[2][:-1]])
-            data_list.append([img_root + data[0], img_root + data[1],
-                            # img_root + data[2][:-1].replace('annotations', 'annotations_visualize'),
-                            img_root + data[0].replace('bingmap/19', 'a2g').replace('jpg', 'png'),
-                            img_root + data[0].replace('bing', 'polar').replace('jpg', 'png')])
+    for i in range(0, len(anuData['panoIds'])):
+        # grd_id_align = img_root + 'streetview/' + anuData['panoIds'][i] + '_grdView.png'
+        # sat_id_ori = img_root + 'satview_polish/' + anuData['panoIds'][i] + '_satView_polish.png'
+        grd_id_align = anuData['panoIds'][i] + '_grdView.jpg'
+        sat_id_ori = anuData['panoIds'][i] + '_satView_polish.jpg'
+        data_list.append([grd_id_align, sat_id_ori])
+    
+    if mode=='train':
+        training_inds = anuData['trainSet']['trainInd'][0][0] - 1
+        trainNum = len(training_inds)
+        trainList = []
+        for k in range(trainNum):
+            trainList.append(data_list[training_inds[k][0]])
+        pano_list = [img_root + 'streetview/' + item[0] for item in trainList if item[0] in exist_grd_list and item[1] in exist_aer_list]
+        aer_list = [img_root + 'satview_polish/' + item[1] for item in trainList if item[0] in exist_grd_list and item[1] in exist_aer_list]
+        polar_list = [img_root + 'polar_polish/' + item[1] for item in trainList if item[0] in exist_grd_list and item[1] in exist_aer_list]
 
-    aer_list = [item[0] for item in data_list]
-    pano_list = [item[1] for item in data_list]
-    # mask_list = [item[2] for item in data_list]
-    tanpolar_list = [item[2] for item in data_list]
-    polar_list = [item[3] for item in data_list]
+    
+    else:
+        val_inds = anuData['valSet']['valInd'][0][0] - 1
+        valNum = len(val_inds)
+        valList = []
+        for k in range(valNum):
+            valList.append(data_list[val_inds[k][0]])
+        pano_list = [img_root + 'streetview/' + item[0] for item in valList if item[0] in exist_grd_list and item[1] in exist_aer_list]
+        aer_list = [img_root + 'satview_polish/' + item[1] for item in valList if item[0] in exist_grd_list and item[1] in exist_aer_list]
+    
+    # 设置设备
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 创建一个在 CUDA 设备上的生成器
+    generator = torch.Generator(device=device)
     
     # 创建数据集和数据加载器
-    dataset = ImageDataset(aer_list, pano_list, tanpolar_list, polar_list)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataset = ImageDataset(aer_list, pano_list)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, generator=generator)
     
     steps_per_epoch = int(math.ceil(len(data_list) / batch_size))
         
     return Examples(
-        paths=img_root + data[0],
         dataloader=dataloader,
         count=len(data_list),
         steps_per_epoch=steps_per_epoch,
