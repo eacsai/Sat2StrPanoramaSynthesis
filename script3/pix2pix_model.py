@@ -22,23 +22,6 @@ aer_size = 256
 grd_height = -2
 max_height = 6
 
-# 计算一维的高斯分布向量
-def gaussian(window_size, sigma):
-    gauss = torch.Tensor([exp(-(x - window_size//2)**2/float(2*sigma**2)) for x in range(window_size)])
-    return gauss/gauss.sum()
- 
- 
-# 创建高斯核，通过两个一维高斯分布向量进行矩阵乘法得到
-# 可以设定channel参数拓展为3通道
-from .pix2pix_model import gaussian
-import torch
-
-def create_window(window_size, channel=1):
-    _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
-    _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
-    window = _2D_window.expand(channel, 1, window_size, window_size).contiguous()
-    return window
-
 class Pix2PixModel(BaseModel):
     """ This class implements the pix2pix model, for learning a mapping from input images to output images given paired data.
 

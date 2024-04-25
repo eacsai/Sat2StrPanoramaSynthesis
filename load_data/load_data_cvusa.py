@@ -10,7 +10,7 @@ import os
 import math
 
 Examples = collections.namedtuple(
-    "Examples", "dataloader, count, steps_per_epoch")
+    "Examples", "train_dataloader, test_dataloader, count")
 
 
 class ImageDataset(Dataset):
@@ -64,36 +64,49 @@ class ImageDataset(Dataset):
 
 
 # pytorch version of CVUSA loader
-def load_examples(mode='train', batch_size=2):
+def load_examples(batch_size=2):
 
     img_root = '/public/home/v-wangqw/program/CVUSA/'
-    if mode == 'train':
-        file_list = os.path.join(img_root, 'splits/train-19zl.csv')
-    elif mode == 'test':
-        file_list = os.path.join(img_root, 'splits/val-19zl.csv')
+    
+    train_list = os.path.join(img_root, 'splits/train-19zl.csv')
+    test_list = os.path.join(img_root, 'splits/val-19zl.csv')
 
-    data_list = []
-    with open(file_list, 'r') as f:
+    train_data_list = []
+    with open(train_list, 'r') as f:
         for line in f:
             data = line.split(',')
             # data_list.append([img_root + data[0], img_root + data[1], img_root + data[2][:-1]])
-            data_list.append([img_root + data[0], img_root + data[1], img_root +
+            train_data_list.append([img_root + data[0], img_root + data[1], img_root +
                              data[0].replace('bing', 'polar').replace('jpg', 'png')])
 
-    aer_list = [item[0] for item in data_list]
-    pano_list = [item[1] for item in data_list]
-    polar_list = [item[2] for item in data_list]
+    aer_list = [item[0] for item in train_data_list]
+    pano_list = [item[1] for item in train_data_list]
+    polar_list = [item[2] for item in train_data_list]
 
     # 创建数据集和数据加载器
-    dataset = ImageDataset(aer_list, pano_list, polar_list)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    train_dataset = ImageDataset(aer_list, pano_list, polar_list)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
-    steps_per_epoch = int(math.ceil(len(data_list) / batch_size))
+    test_data_list = []
+    with open(test_list, 'r') as f:
+        for line in f:
+            data = line.split(',')
+            # data_list.append([img_root + data[0], img_root + data[1], img_root + data[2][:-1]])
+            test_data_list.append([img_root + data[0], img_root + data[1], img_root +
+                             data[0].replace('bing', 'polar').replace('jpg', 'png')])
+
+    aer_list = [item[0] for item in test_data_list]
+    pano_list = [item[1] for item in test_data_list]
+    polar_list = [item[2] for item in test_data_list]
+
+    # 创建数据集和数据加载器
+    test_dataset = ImageDataset(aer_list, pano_list, polar_list)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
     return Examples(
-        dataloader=dataloader,
-        count=len(data_list),
-        steps_per_epoch=steps_per_epoch,
+        train_dataloader=train_dataloader,
+        test_dataloader=test_dataloader,
+        count=len(train_data_list),
     )
 
 

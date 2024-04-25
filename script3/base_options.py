@@ -133,6 +133,7 @@ class BaseOptions():
         parser.add_argument('--no_dropout', action='store_true', help='no dropout for the generator')
         parser.add_argument('--input_type', type=str, default='estimated_height', help='input image type for the generator')
         parser.add_argument('--model_type', type=str, default='primary', help='type for the generator')
+        parser.add_argument('--results_dir', type=str, default='./results', help='save results')
 
         self.initialized = True
         return parser

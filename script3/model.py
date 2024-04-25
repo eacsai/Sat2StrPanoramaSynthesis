@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
+
+from tqdm import tqdm
 from .base_model import BaseModel
 
 from geometry.utils import *
@@ -10,7 +12,7 @@ from VGG.perceptual_loss_pytorch import *
 from torch.optim import lr_scheduler
 
 import itertools
-
+import time
 
 EPS = 1e-7
 
@@ -154,18 +156,68 @@ class PytorchModel(BaseModel):
             if isinstance(name, str):
                 visual_ret[name] = getattr(self, name)
         return visual_ret
-    
-    
-    
-    def optimize_parameters(self):
+
+    def train_step(self, epoch, train_dataloader, visualizer, total_iters):
+        iter_data_time = time.time()    # timer for data loading per iteration
+        epoch_iter = 0                  # the number of training iterations in current epoch, reset to 0 every epoch
+        visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
+        self.update_learning_rate()    # update learning rates in the beginning of every epoch.
+        
+        loop = tqdm(train_dataloader, leave=True)
+        loop.set_description(f"Epoch {epoch}")
+        for step, batch in enumerate(loop):
+            iter_start_time = time.time()  # timer for computation per iteration
+            if total_iters % self.opt.print_freq == 0:
+                t_data = iter_start_time - iter_data_time
+
+            total_iters += self.opt.batch_size
+            epoch_iter += self.opt.batch_size
+            
+            aerial = batch.get('aer_image').permute(0,2,3,1).to(self.device)
+            polar = batch.get('pol_image').permute(0,2,3,1).to(self.device)
+            ground = batch.get('pano_image').permute(0,2,3,1).to(self.device)
+            self.set_input(aerial, ground, polar)
+            
+            self.forward()                   # compute fake images: G(A)
+            # update D
+            self.set_requires_grad(self.discriminator, True)  # enable backprop for D
+            self.optimizer_D.zero_grad()     # set D's gradients to zero
+            self.backward_D()                # calculate gradients for D
+            self.optimizer_D.step()          # update D's weights
+            # update G
+            self.set_requires_grad(self.discriminator, False)  # D requires no gradients when optimizing G
+            self.optimizer_G.zero_grad()        # set G's gradients to zero
+            self.backward_G()                   # calculate graidents for G
+            self.optimizer_G.step()             # update G's weights
+            
+            if total_iters % self.opt.display_freq == 0:   # display images on visdom and save images to a HTML file
+                save_result = total_iters % self.opt.update_html_freq == 0
+                visualizer.display_current_results(self.get_current_visuals(), epoch, save_result)
+
+            if total_iters % self.opt.print_freq == 0:    # print training losses and save logging information to the disk
+                losses = self.get_current_losses()
+                t_comp = (time.time() - iter_start_time) / self.opt.batch_size
+                visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
+                if self.opt.display_id > 0:
+                    visualizer.plot_current_losses(epoch, float(epoch_iter) / len(batch), losses)
+                    total_iters += 1
+
+            if total_iters % self.opt.save_latest_freq == 0:   # cache our latest model every <save_latest_freq> iterations
+                print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
+                save_suffix = 'iter_%d' % total_iters if self.opt.save_by_iter else 'latest'
+                self.save_networks(save_suffix)
+
+            iter_data_time = time.time()
+        
+        # if epoch % 2 == 0:              # cache our model every <save_epoch_freq> epochs
+        #     print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
+        #     self.save_networks('latest')
+        #     self.save_networks(epoch)
+        
+    def test_step(self, data):        
+        aerial = data.get('aer_image').permute(0,2,3,1).to(self.device)
+        polar = data.get('pol_image').permute(0,2,3,1).to(self.device)
+        ground = data.get('pano_image').permute(0,2,3,1).to(self.device)
+        self.set_input(aerial, ground, polar)
+        
         self.forward()                   # compute fake images: G(A)
-        # update D
-        self.set_requires_grad(self.discriminator, True)  # enable backprop for D
-        self.optimizer_D.zero_grad()     # set D's gradients to zero
-        self.backward_D()                # calculate gradients for D
-        self.optimizer_D.step()          # update D's weights
-        # update G
-        self.set_requires_grad(self.discriminator, False)  # D requires no gradients when optimizing G
-        self.optimizer_G.zero_grad()        # set G's gradients to zero
-        self.backward_G()                   # calculate graidents for G
-        self.optimizer_G.step()             # update G's weights
