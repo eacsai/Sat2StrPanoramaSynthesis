@@ -1,0 +1,260 @@
+----------------- Options ---------------
+             aspect_ratio: 1.0                           
+               batch_size: 14                            	[default: 4]
+                    beta1: 0.5                           
+               checkpoint: None                          
+          checkpoints_dir: ./checkpoints                 
+           continue_train: False                         
+                  dataset: CVUSA                         	[default: CVACT]
+              display_env: main                          
+             display_freq: 400                           
+               display_id: 1                             
+            display_ncols: 4                             
+             display_port: 8097                          
+           display_server: http://localhost              
+          display_winsize: 256                           
+              epoch_count: 1                             
+            finalout_type: image                         
+                     flip: True                          
+                 gan_mode: lsgan                         
+               gan_weight: 1.0                           
+              geoout_type: image                         
+                  gpu_ids: 0                             
+           heightPlaneNum: 1                             
+              height_mode: radiusPlaneMethod             
+                init_gain: 0.02                          
+                init_type: normal                        
+                 input_nc: 3                             
+               input_type: pol                           	[default: estimated_height]
+              inputs_type: geometry                      
+                  isTrain: True                          	[default: None]
+            l1_weight_aer: 0.0                           
+            l1_weight_grd: 0.0                           	[default: 100.0]
+         lab_colorization: False                         
+                lambda_L1: 0.1                           	[default: 100.0]
+                       lr: 0.0002                        
+               max_epochs: 35                            
+                   method: column                        
+                     mode: train                         
+                    model: pix2pix                       
+               model_type: primary                       
+                 n_epochs: 100                           
+           n_epochs_decay: 100                           
+               n_layers_D: 3                             
+                     name: primary_2080_1                	[default: experiment_name]
+                      ndf: 64                            
+                     netD: basic                         
+                     netG: unet_128                      
+                      ngf: 64                            
+               no_dropout: False                         
+                  no_html: False                         
+                     norm: instance                      
+               output_dir: pix2pix_perceploss            
+          output_filetype: png                           
+                output_nc: 3                             
+    perceptual_weight_aer: 0.0                           
+    perceptual_weight_grd: 1.0                           	[default: 0.0]
+                    phase: train                         
+               print_freq: 100                           
+            progress_freq: 50                            
+           radiusPlaneNum: 32                            
+              results_dir: ./results                     
+             save_by_iter: False                         
+          save_epoch_freq: 5                             
+                save_freq: 5000                          
+         save_latest_freq: 5000                          
+               scale_size: 286                           
+                     seed: None                          
+           separable_conv: False                         
+                     skip: 0                             
+             start_epochs: 0                             
+             summary_freq: 100                           
+               trace_freq: 0                             
+         update_html_freq: 1000                          
+          which_direction: AtoG                          
+----------------- End -------------------
+create web directory ./checkpoints/primary_2080_1/web...
+creating web directory ./results/primary_2080_1/test
+examples count = 35532
+initialize network Encoder_Decoder
+initialize network with normal
+initialize network Generator
+initialize network with normal
+initialize network Discriminator
+initialize network with normal
+============================train==============================
+learning rate 0.0002000 -> 0.0002000
+Wrote profile results to main.py.lprof
+Timer unit: 1e-06 s
+
+Total time: 0.576958 s
+File: /public/home/v-wangqw/program/Sat2StrPanoramaSynthesis/script3/model.py
+Function: __init__ at line 35
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    35                                               @profile
+    36                                               def __init__(self, opt):
+    37         1        106.8    106.8      0.0          BaseModel.__init__(self, opt)
+    38                                                   
+    39         1          0.7      0.7      0.0          self.opt = opt    
+    40         1          1.0      1.0      0.0          self.optimizers = []
+    41         1          1.7      1.7      0.0          self.visual_names = ['real_A', 'fake_B_grd', 'real_B']
+    42         1          1.3      1.3      0.0          self.loss_names = ['G_GAN', 'G_L1', 'G_perceptual', 'D_real', 'D_fake']
+    43                                                   
+    44         1          1.1      1.1      0.0          self.generator_outputs_channels = 3
+    45         1     166440.2 166440.2     28.8          self.edNet = encoder_decoder(3, generator_outputs_channels=64)
+    46         1     384280.0 384280.0     66.6          self.generator = generator(3, self.generator_outputs_channels, self.opt.ngf)
+    47         1      24792.8  24792.8      4.3          self.discriminator = discriminator(3)
+    48         1        190.6    190.6      0.0          self.criterionGAN = GANLoss().to(self.device)
+    49         1         33.6     33.6      0.0          self.criterionL1 = torch.nn.L1Loss()
+    50                                                   
+    51         1          2.3      2.3      0.0          if self.opt.heightPlaneNum > 1:
+    52                                                       self.optimizer_G = torch.optim.Adam(itertools.chain(self.edNet.parameters(), self.generator.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
+    53                                                   else:
+    54         1        759.3    759.3      0.1              self.optimizer_G = torch.optim.Adam(self.generator.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+    55                                                   
+    56         1        245.8    245.8      0.0          self.optimizer_D = torch.optim.Adam(self.discriminator.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+    57                                                   
+    58         1          0.8      0.8      0.0          self.optimizers.append(self.optimizer_G)
+    59         1          0.5      0.5      0.0          self.optimizers.append(self.optimizer_D)
+    60         1        100.0    100.0      0.0          self.schedulers = [get_scheduler(optimizer, self.opt) for optimizer in self.optimizers]
+
+Total time: 12.1996 s
+File: /public/home/v-wangqw/program/Sat2StrPanoramaSynthesis/script3/model.py
+Function: forward at line 67
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    67                                               @profile
+    68                                               def forward(self):
+    69         1         20.6     20.6      0.0          if self.opt.input_type == 'estimated_height':
+    70                                                       if self.opt.heightPlaneNum > 1:
+    71                                                           self.estimated_height = self.edNet(self.real_A)
+    72                                                       else:
+    73                                                           self.estimated_height = torch.cat([torch.zeros([self.real_A.size(0), 63, self.real_A.size(2), self.real_A.size(3)]),torch.ones([self.real_A.size(0), 1, self.real_A.size(2), self.real_A.size(3)])], axis=1).to('cuda')
+    74                                                       
+    75                                                       self.estimated_height = torch.cat([torch.zeros([self.real_A.size(0), 63, self.real_A.size(2), self.real_A.size(3)]),torch.ones([self.real_A.size(0), 1, self.real_A.size(2), self.real_A.size(3)])], axis=1).to('cuda')
+    76                                           
+    77                                                       argmax_height = torch.argmax(self.estimated_height, dim=1, keepdim=True)
+    78                                                       hight_img = to_pil((argmax_height[0,:,:,:] + 1) / 2)
+    79                                                       hight_img.save(self.opt.name+'_estimated_height.png')
+    80                                                       generator_inputs = geometry_transform(self.real_A, self.estimated_height, target_height, target_width,
+    81                                                                                     self.opt.height_mode, grd_height, max_height, self.opt.method, self.opt.geoout_type, self.opt.dataset)
+    82                                                   
+    83         1          6.6      6.6      0.0          elif self.opt.input_type == 'pol':
+    84         1          0.5      0.5      0.0              generator_inputs = self.pol_A
+    85                                               
+    86         1   12109342.0    1e+07     99.3          outputs = self.generator(generator_inputs)
+    87                                                   
+    88         1       8447.8   8447.8      0.1          generator_img = to_pil((generator_inputs[0,:,:,:] + 1) / 2)
+    89         1      34989.0  34989.0      0.3          generator_img.save(self.opt.name+'_generator_img.png')
+    90         1       2077.2   2077.2      0.0          x_img = to_pil((outputs[0,:,:,:] + 1) / 2)
+    91         1      15841.0  15841.0      0.1          x_img.save(self.opt.name+'_x_img.png')
+    92         1       1930.1   1930.1      0.0          y_img = to_pil((self.real_B[0,:,:,:] + 1) / 2)
+    93         1      26900.8  26900.8      0.2          y_img.save(self.opt.name+'_y_img.png')
+    94         1          2.6      2.6      0.0          self.fake_B_grd = outputs
+
+Total time: 12.8814 s
+File: /public/home/v-wangqw/program/Sat2StrPanoramaSynthesis/script3/model.py
+Function: backward_G at line 96
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    96                                               @profile
+    97                                               def backward_G(self):
+    98                                                   # generator_loss
+    99                                                   # predict_fake => 1
+   100                                                   # abs(targets - outputs) => 0
+   101         1       1816.1   1816.1      0.0          predict_fake_grd = self.discriminator(self.fake_B_grd)
+   102                                           
+   103         1        345.6    345.6      0.0          self.loss_G_GAN = self.criterionGAN(predict_fake_grd, True)
+   104         1      15506.0  15506.0      0.1          self.loss_G_L1 = self.criterionL1(self.real_B, self.fake_B_grd) * self.opt.lambda_L1
+   105         1    3296973.6    3e+06     25.6          self.loss_G_perceptual = perceptual_loss(self.real_B, self.fake_B_grd) * self.opt.lambda_L1
+   106                                           
+   107         1         53.2     53.2      0.0          self.loss_G = self.loss_G_GAN * 1 + self.loss_G_perceptual
+   108                                                   
+   109         1    9566661.4    1e+07     74.3          self.loss_G.backward()
+
+Total time: 4.34411 s
+File: /public/home/v-wangqw/program/Sat2StrPanoramaSynthesis/script3/model.py
+Function: backward_D at line 110
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   110                                               @profile
+   111                                               def backward_D(self):
+   112                                                   # 2x [batch, height, width, channels] => [batch, 30, 30, 1]
+   113         1     255967.3 255967.3      5.9          predict_real_grd = self.discriminator(self.real_B)
+   114         1      17583.4  17583.4      0.4          self.loss_D_real = self.criterionGAN(predict_real_grd, True)
+   115                                                   # 2x [batch, height, width, channels] => [batch, 30, 30, 1]
+   116         1       9634.9   9634.9      0.2          predict_fake_grd = self.discriminator(self.fake_B_grd.detach())
+   117         1        131.5    131.5      0.0          self.loss_D_fake = self.criterionGAN(predict_fake_grd, False)
+   118                                           
+   119         1      11633.6  11633.6      0.3          self.loss_D = (self.loss_D_fake + self.loss_D_real) * 0.5
+   120         1    4049155.6    4e+06     93.2          self.loss_D.backward()
+
+Total time: 30.6026 s
+File: /public/home/v-wangqw/program/Sat2StrPanoramaSynthesis/script3/model.py
+Function: train_step at line 159
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   159                                               @profile
+   160                                               def train_step(self, epoch, train_dataloader, visualizer, total_iters):
+   161         1          0.9      0.9      0.0          iter_data_time = time.time()    # timer for data loading per iteration
+   162         1          0.2      0.2      0.0          epoch_iter = 0                  # the number of training iterations in current epoch, reset to 0 every epoch
+   163         1          2.9      2.9      0.0          visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
+   164         1        736.5    736.5      0.0          self.update_learning_rate()    # update learning rates in the beginning of every epoch.
+   165                                                   
+   166         1       4149.3   4149.3      0.0          loop = tqdm(train_dataloader, leave=True)
+   167         1         75.2     75.2      0.0          loop.set_description(f"Epoch {epoch}")
+   168         1    1031967.8    1e+06      3.4          for step, batch in enumerate(loop):
+   169         1          5.0      5.0      0.0              iter_start_time = time.time()  # timer for computation per iteration
+   170         1         11.9     11.9      0.0              if total_iters % self.opt.print_freq == 0:
+   171         1          0.6      0.6      0.0                  t_data = iter_start_time - iter_data_time
+   172                                           
+   173         1          0.5      0.5      0.0              total_iters += self.opt.batch_size
+   174         1          0.3      0.3      0.0              epoch_iter += self.opt.batch_size
+   175                                                       
+   176         1       4358.0   4358.0      0.0              aerial = batch.get('aer_image').permute(0,2,3,1).to(self.device)
+   177         1       4713.5   4713.5      0.0              polar = batch.get('pol_image').permute(0,2,3,1).to(self.device)
+   178         1       4778.4   4778.4      0.0              ground = batch.get('pano_image').permute(0,2,3,1).to(self.device)
+   179         1        111.3    111.3      0.0              self.set_input(aerial, ground, polar)
+   180                                                       
+   181         1   12199736.2    1e+07     39.9              self.forward()                   # compute fake images: G(A)
+   182                                                       # update D
+   183         1        402.2    402.2      0.0              self.set_requires_grad(self.discriminator, True)  # enable backprop for D
+   184         1       1184.4   1184.4      0.0              self.optimizer_D.zero_grad()     # set D's gradients to zero
+   185         1    4344236.5    4e+06     14.2              self.backward_D()                # calculate gradients for D
+   186         1      59752.3  59752.3      0.2              self.optimizer_D.step()          # update D's weights
+   187                                                       # update G
+   188         1        297.5    297.5      0.0              self.set_requires_grad(self.discriminator, False)  # D requires no gradients when optimizing G
+   189         1        772.5    772.5      0.0              self.optimizer_G.zero_grad()        # set G's gradients to zero
+   190         1   12881466.4    1e+07     42.1              self.backward_G()                   # calculate graidents for G
+   191         1      18296.5  18296.5      0.1              self.optimizer_G.step()             # update G's weights
+   192                                                       
+   193         1         23.7     23.7      0.0              if total_iters % self.opt.display_freq == 0:   # display images on visdom and save images to a HTML file
+   194                                                           save_result = total_iters % self.opt.update_html_freq == 0
+   195                                                           visualizer.display_current_results(self.get_current_visuals(), epoch, save_result)
+   196                                           
+   197         1          1.7      1.7      0.0              if total_iters % self.opt.print_freq == 0:    # print training losses and save logging information to the disk
+   198                                                           losses = self.get_current_losses()
+   199                                                           t_comp = (time.time() - iter_start_time) / self.opt.batch_size
+   200                                                           visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
+   201                                                           if self.opt.display_id > 0:
+   202                                                               visualizer.plot_current_losses(epoch, float(epoch_iter) / len(batch), losses)
+   203                                                               total_iters += 1
+   204                                           
+   205         1          1.6      1.6      0.0              if total_iters % self.opt.save_latest_freq == 0:   # cache our latest model every <save_latest_freq> iterations
+   206                                                           print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
+   207                                                           save_suffix = 'iter_%d' % total_iters if self.opt.save_by_iter else 'latest'
+   208                                                           self.save_networks(save_suffix)
+   209                                           
+   210         1          6.4      6.4      0.0              iter_data_time = time.time()
+   211         1      45503.2  45503.2      0.1              sys.exit()
+   212                                                   # if epoch % 2 == 0:              # cache our model every <save_epoch_freq> epochs
+   213                                                   #     print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
+   214                                                   #     self.save_networks('latest')
+   215                                                   #     self.save_networks(epoch)
+

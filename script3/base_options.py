@@ -92,6 +92,8 @@ class BaseOptions():
         parser.add_argument('--gan_mode', type=str, default='lsgan', help='the type of GAN objective. [vanilla| lsgan | wgangp]. vanilla GAN loss is the cross-entropy objective used in the original GAN paper.')
         parser.add_argument('--lambda_L1', type=float, default=100.0, help='weight for L1 loss')
         parser.add_argument('--continue_train', action='store_true', help='continue training: load the latest model')
+        parser.add_argument('--lr_policy', type=str, default='linear', help='learning rate policy. [linear | step | plateau | cosine]')
+        parser.add_argument('--verbose', action='store_true', help='if specified, print more debugging information')
 
         # export options
         parser.add_argument("--output_filetype", default="png", choices=["png", "jpeg"])

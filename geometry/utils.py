@@ -1,3 +1,4 @@
+from math import exp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -59,11 +60,10 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[0]):
 
     Return an initialized network.
     """
-    # if len(gpu_ids) > 0:
-    #     assert (torch.cuda.is_available())
-    #     net.to(gpu_ids[0])
-    #     net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
-    net.to('cuda')
+    if len(gpu_ids) > 0:
+        assert (torch.cuda.is_available())
+        net.to(gpu_ids[0])
+        net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
     print('initialize network %s' % net.__class__.__name__)
     init_weights(net, init_type, init_gain=init_gain)
     return net
@@ -261,8 +261,8 @@ class Generator(nn.Module):
             # ngf * 8, # encoder_8: [batch, 4, 4, ngf * 8] => [batch, 2, 2, ngf * 8]
         ]
 
-        layers = [nn.ModuleList([nn.Conv2d(input_channels, ngf,
-                                           kernel_size=4, stride=2, padding=1)])]
+        layers = [nn.Conv2d(input_channels, ngf,
+                                           kernel_size=4, stride=2, padding=1)]
 
         in_channels = ngf
         for out_channels in layer_specs:
@@ -272,9 +272,9 @@ class Generator(nn.Module):
                                            kernel_size=4, stride=2, padding=1))
             encode_layers.append(nn.BatchNorm2d(out_channels))
             in_channels = out_channels
-            layers.append(nn.ModuleList([
+            layers.append(nn.Sequential(
                 *encode_layers
-            ]))
+            ))
 
         self.encoder_layers = nn.ModuleList([
             *layers
@@ -306,9 +306,9 @@ class Generator(nn.Module):
             decoder_layers.append(nn.BatchNorm2d(out_channels))
             if dropout > 0.0:
                 decoder_layers.append(nn.Dropout(dropout))
-            layers.append(nn.ModuleList([
+            layers.append(nn.Sequential(
                 *decoder_layers
-            ]))
+            ))
             in_channels = out_channels * 2
 
         self.decoder_layers = nn.ModuleList([
@@ -320,17 +320,16 @@ class Generator(nn.Module):
         layers.append(nn.ConvTranspose2d(
             int(in_channels / 2), generator_outputs_channels, kernel_size=4, stride=2, padding=1, output_padding=0, bias=False))
         layers.append(nn.Tanh())
-        self.upsamle_layers = nn.ModuleList([
+        self.upsamle_layers = nn.Sequential(
             *layers
-        ])
+        )
 
     def forward(self, x):
         # Encoder
         layers = []
         
         for encoder_layers in self.encoder_layers:
-            for layer in encoder_layers:
-                x = layer(x)
+            x = encoder_layers(x)
             layers.append(x)
 
         layers.append(x.view(-1, x.shape[1], 1, 4))
@@ -341,14 +340,12 @@ class Generator(nn.Module):
             skip_layer = num_encoder_layers - i - 2
             if self.skip and i > 0:
                 x = torch.cat([x, layers[skip_layer]], dim=1)
-            for decode in decoder_layers:
-                x = decode(x)
+            x = decoder_layers(x)
 
             layers.append(x)
 
         # unsample
-        for i, upsample in enumerate(self.upsamle_layers):
-            x = upsample(x)
+        x = self.upsamle_layers(x)
         return x
 
 class GANLoss(nn.Module):
@@ -404,15 +401,85 @@ class GANLoss(nn.Module):
         loss = self.loss(prediction, target_tensor)
         return loss
 
-def generator(in_channels, generator_outputs_channels, ngf=4, init_type='normal', init_gain=0.02, gpu_ids=[0]):
+def generator(in_channels, generator_outputs_channels, gpu_ids=[0], ngf=4, init_type='normal', init_gain=0.02):
     net = Generator(input_channels=in_channels,
-               generator_outputs_channels=generator_outputs_channels, ngf=ngf).to('cuda')
+               generator_outputs_channels=generator_outputs_channels, ngf=ngf)
     return init_net(net, init_type, init_gain, gpu_ids)
 
-def encoder_decoder(in_channels, generator_outputs_channels, ngf=4, init_type='normal', init_gain=0.02, gpu_ids=[0]):
-    net = Encoder_Decoder(in_channels, generator_outputs_channels, ngf).to('cuda')
+def encoder_decoder(in_channels, generator_outputs_channels, gpu_ids=[0], ngf=4, init_type='normal', init_gain=0.02):
+    net = Encoder_Decoder(in_channels, generator_outputs_channels, ngf)
     return init_net(net, init_type, init_gain, gpu_ids)
 
-def discriminator(in_channels, init_type='normal', init_gain=0.02, gpu_ids=[0]):
-    net = Discriminator(in_channels).to('cuda')
+def discriminator(in_channels, gpu_ids=[0], init_type='normal', init_gain=0.02):
+    net = Discriminator(in_channels)
     return init_net(net, init_type, init_gain, gpu_ids)
+
+def gaussian(window_size, sigma):
+    gauss = torch.Tensor([exp(-(x - window_size//2)**2/float(2*sigma**2)) for x in range(window_size)])
+    return gauss/gauss.sum()
+
+def create_window(window_size, channel=1):
+    _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
+    _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
+    window = _2D_window.expand(channel, 1, window_size, window_size).contiguous()
+    return window
+
+def calculate_psnr(img1, img2, max_value = 255):
+    # 计算MSE
+    mse = F.mse_loss(img1, img2)
+    # 计算MAX_I
+    max_value = torch.tensor(max_value).float()
+    # 计算PSNR
+    psnr = 20 * torch.log10(max_value / torch.sqrt(mse))
+    return psnr.item()
+
+def calculate_ssim(img1, img2, window_size=11, window=None, size_average=True, full=False, val_range=None):
+    # Value range can be different from 255. Other common ranges are 1 (sigmoid) and 2 (tanh).
+    if val_range is None:
+        if torch.max(img1) > 128:
+            max_val = 255
+        else:
+            max_val = 1
+
+        if torch.min(img1) < -0.5:
+            min_val = -1
+        else:
+            min_val = 0
+        L = max_val - min_val
+    else:
+        L = val_range
+
+    padd = 0
+    (_, channel, height, width) = img1.size()
+    if window is None:
+        real_size = min(window_size, height, width)
+        window = create_window(real_size, channel=channel).to(img1.device)
+
+    mu1 = F.conv2d(img1, window, padding=padd, groups=channel)
+    mu2 = F.conv2d(img2, window, padding=padd, groups=channel)
+
+    mu1_sq = mu1.pow(2)
+    mu2_sq = mu2.pow(2)
+    mu1_mu2 = mu1 * mu2
+
+    sigma1_sq = F.conv2d(img1 * img1, window, padding=padd, groups=channel) - mu1_sq
+    sigma2_sq = F.conv2d(img2 * img2, window, padding=padd, groups=channel) - mu2_sq
+    sigma12 = F.conv2d(img1 * img2, window, padding=padd, groups=channel) - mu1_mu2
+
+    C1 = (0.01 * L) ** 2
+    C2 = (0.03 * L) ** 2
+
+    v1 = 2.0 * sigma12 + C2
+    v2 = sigma1_sq + sigma2_sq + C2
+    cs = torch.mean(v1 / v2)  # contrast sensitivity
+
+    ssim_map = ((2 * mu1_mu2 + C1) * v1) / ((mu1_sq + mu2_sq + C1) * v2)
+
+    if size_average:
+        ret = ssim_map.mean()
+    else:
+        ret = ssim_map.mean(1).mean(1).mean(1)
+
+    if full:
+        return ret, cs
+    return ret.item()
